@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Modified by tamas@hegelab.org
+# see detailes at https://github.com/hegelab/alphafold
+
 """Library to run Jackhmmer from Python."""
 
 from concurrent import futures
@@ -24,6 +27,8 @@ from urllib import request
 from absl import logging
 
 from alphafold.data.tools import utils
+from alphafold.data import parsers
+
 # Internal import (7716).
 
 
@@ -86,11 +91,16 @@ class Jackhmmer:
     self.get_tblout = get_tblout
     self.streaming_callback = streaming_callback
 
-  def _query_chunk(self, input_fasta_path: str, database_path: str
+  def _query_chunk(self, input_fasta_path: str,
+                   database_path: str,
+                   sto_path: Optional[str] = None,
+                   max_hits: Optional[int] = None,
+                   a3m_needed: Optional[bool] = None
                    ) -> Mapping[str, Any]:
     """Queries the database chunk using Jackhmmer."""
     with utils.tmpdir_manager(base_dir='/tmp') as query_tmp_dir:
-      sto_path = os.path.join(query_tmp_dir, 'output.sto')
+      if not sto_path:
+        sto_path = os.path.join(query_tmp_dir, 'output.sto')
 
       # The F1/F2/F3 are the expected proportion to pass each of the filtering
       # stages (which get progressively more expensive), reducing these
@@ -145,11 +155,16 @@ class Jackhmmer:
         with open(tblout_path) as f:
           tbl = f.read()
 
-      with open(sto_path) as f:
-        sto = f.read()
-
+      # with open(sto_path) as f: # co out by hege
+      #   sto = f.read() # co out by hege
+      if not a3m_needed:
+        sto, a3m = parsers.get_sto(sto_path, max_hits), None
+      else:
+        sto, a3m = parsers.get_sto_a3m(sto_path, max_hits)
+      
     raw_output = dict(
         sto=sto,
+        a3m=a3m,
         tbl=tbl,
         stderr=stderr,
         n_iter=self.n_iter,
@@ -157,10 +172,13 @@ class Jackhmmer:
 
     return raw_output
 
-  def query(self, input_fasta_path: str) -> Sequence[Mapping[str, Any]]:
+  def query(self, input_fasta_path: str,
+            sto_path: Optional[str] = None,
+            max_hits: Optional[int] = None,
+            a3m_needed: Optional[bool] = None) -> Sequence[Mapping[str, Any]]:
     """Queries the database using Jackhmmer."""
     if self.num_streamed_chunks is None:
-      return [self._query_chunk(input_fasta_path, self.database_path)]
+      return [self._query_chunk(input_fasta_path, self.database_path, sto_path, max_hits, a3m_needed)]
 
     db_basename = os.path.basename(self.database_path)
     db_remote_chunk = lambda db_idx: f'{self.database_path}.{db_idx}'

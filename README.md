@@ -1,6 +1,29 @@
-![header](imgs/header.jpg)
+<p>
+ <img src="imgs/header.jpg" width="600"/>
+ <img src="imgs/af_hegelab.png" width="600"/>
+</p>
 
 # AlphaFold
+
+We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal one for install instructions at [deepmind alphafold2](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
+
+Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
+
+# Issues pushed us to contribute
+
+### "Out of Memory"
+
+Some of our AF2 runs with short sequences (~250 a.a.) consumed all of our memory (96GB) and died. Our targets in these cases were highly conserved and produced a very large alignment file, which is read into the memory by a simple .read() in `alphafold/data/tools/jackhmmer.py` ` _query_chunk`. Importantly, the max_hit limit is applied at a later step to the full set, which resides already in the memory, so this option does not prevent this error.
+* To overcome this issue exhausting the system RAM, we read the .sto file line-by-line, so only max_hit will reach the memory.
+* Since the same data needed line-by-line for a3m conversion, we merged the two step together. We inserted to functions into `alphafold/data/parsers.py`: `get_sto` if only sto is needed and `get_sto_a3m` if also a3m is needed (the code is somewhat redundant but simple and clean).
+* This issue was caused by `jackhmmer_uniref90_runner.query` and `jackhmmer_mgnify_runner.query`, so we modified the calls to this function in `alphafold/data/pipeline.py`.
+* The called `query` in `alphafold/data/tools/jackhmmer.py` calls `_query_chunk`; from here we call our `get_sto*`; `_query_chunk` returns the `raw_output` dictionary, which also includes 'a3m' as a string or None.
+
+### "ValueError: Cannot create a tensor proto whose content is larger than 2GB."
+(https://github.com/deepmind/alphafold/issues/71)
+If your protein is highly conserved then the alignment may result in a large data set that does not fit TensorFlow's hard coded 2Gb limit. Theoretically, the call to `jackhmmer_uniref90_result` in `alphafold/data/pipeline.py` should be limited  to `uniref_max_hits: int = 10000`. However, this does not happen. You can find an [easy fix for this at alphafold.hegelab.org](http://alphafold.hegelab.org/) that avoid to use this fork. However, we also fixed other memory problems with the previous fix. So if you use this fork, this "ValueError...2GB" issue is obsolete for you.
+
+# Important notices - from the original README.md file
 
 This package provides an implementation of the inference pipeline of AlphaFold
 v2.0. This is a completely new model that was entered in CASP14 and published in
@@ -13,321 +36,6 @@ the model parameters should [cite](#citing-this-work) the
 to the
 [Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-021-03819-2/MediaObjects/41586_2021_3819_MOESM1_ESM.pdf)
 for a detailed description of the method.
-
-**You can use a slightly simplified version of AlphaFold with
-[this Colab
-notebook](https://colab.research.google.com/github/deepmind/alphafold/blob/main/notebooks/AlphaFold.ipynb)**
-or community-supported versions (see below).
-
-![CASP14 predictions](imgs/casp14_predictions.gif)
-
-## First time setup
-
-The following steps are required in order to run AlphaFold:
-
-1.  Install [Docker](https://www.docker.com/).
-    *   Install
-        [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-        for GPU support.
-    *   Setup running
-        [Docker as a non-root user](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user).
-1.  Download genetic databases (see below).
-1.  Download model parameters (see below).
-1.  Check that AlphaFold will be able to use a GPU by running:
-
-    ```bash
-    docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
-    ```
-
-    The output of this command should show a list of your GPUs. If it doesn't,
-    check if you followed all steps correctly when setting up the
-    [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-    or take a look at the following
-    [NVIDIA Docker issue](https://github.com/NVIDIA/nvidia-docker/issues/1447#issuecomment-801479573).
-
-### Genetic databases
-
-This step requires `aria2c` to be installed on your machine.
-
-AlphaFold needs multiple genetic (sequence) databases to run:
-
-*   [UniRef90](https://www.uniprot.org/help/uniref),
-*   [MGnify](https://www.ebi.ac.uk/metagenomics/),
-*   [BFD](https://bfd.mmseqs.com/),
-*   [Uniclust30](https://uniclust.mmseqs.com/),
-*   [PDB70](http://wwwuser.gwdg.de/~compbiol/data/hhsuite/databases/hhsuite_dbs/),
-*   [PDB](https://www.rcsb.org/) (structures in the mmCIF format).
-
-We provide a script `scripts/download_all_data.sh` that can be used to download
-and set up all of these databases:
-
-*   Default:
-
-    ```bash
-    scripts/download_all_data.sh <DOWNLOAD_DIR>
-    ```
-
-    will download the full databases.
-
-*   With `reduced_dbs`:
-
-    ```bash
-    scripts/download_all_data.sh <DOWNLOAD_DIR> reduced_dbs
-    ```
-
-    will download a reduced version of the databases to be used with the
-    `reduced_dbs` preset.
-
-We don't provide exactly the versions used in CASP14 -- see the [note on
-reproducibility](#note-on-reproducibility). Some of the databases are mirrored
-for speed, see [mirrored databases](#mirrored-databases).
-
-:ledger: **Note: The total download size for the full databases is around 415 GB
-and the total size when unzipped is 2.2 TB. Please make sure you have a large
-enough hard drive space, bandwidth and time to download. We recommend using an
-SSD for better genetic search performance.**
-
-This script will also download the model parameter files. Once the script has
-finished, you should have the following directory structure:
-
-```
-$DOWNLOAD_DIR/                             # Total: ~ 2.2 TB (download: 438 GB)
-    bfd/                                   # ~ 1.7 TB (download: 271.6 GB)
-        # 6 files.
-    mgnify/                                # ~ 64 GB (download: 32.9 GB)
-        mgy_clusters_2018_12.fa
-    params/                                # ~ 3.5 GB (download: 3.5 GB)
-        # 5 CASP14 models,
-        # 5 pTM models,
-        # LICENSE,
-        # = 11 files.
-    pdb70/                                 # ~ 56 GB (download: 19.5 GB)
-        # 9 files.
-    pdb_mmcif/                             # ~ 206 GB (download: 46 GB)
-        mmcif_files/
-            # About 180,000 .cif files.
-        obsolete.dat
-    small_bfd/                             # ~ 17 GB (download: 9.6 GB)
-        bfd-first_non_consensus_sequences.fasta
-    uniclust30/                            # ~ 86 GB (download: 24.9 GB)
-        uniclust30_2018_08/
-            # 13 files.
-    uniref90/                              # ~ 58 GB (download: 29.7 GB)
-        uniref90.fasta
-```
-
-`bfd/` is only downloaded if you download the full databasees, and `small_bfd/`
-is only downloaded if you download the reduced databases.
-
-### Model parameters
-
-While the AlphaFold code is licensed under the Apache 2.0 License, the AlphaFold
-parameters are made available for non-commercial use only under the terms of the
-CC BY-NC 4.0 license. Please see the [Disclaimer](#license-and-disclaimer) below
-for more detail.
-
-The AlphaFold parameters are available from
-https://storage.googleapis.com/alphafold/alphafold_params_2021-07-14.tar, and
-are downloaded as part of the `scripts/download_all_data.sh` script. This script
-will download parameters for:
-
-*   5 models which were used during CASP14, and were extensively validated for
-    structure prediction quality (see Jumper et al. 2021, Suppl. Methods 1.12
-    for details).
-*   5 pTM models, which were fine-tuned to produce pTM (predicted TM-score) and
-    predicted aligned error values alongside their structure predictions (see
-    Jumper et al. 2021, Suppl. Methods 1.9.7 for details).
-
-## Running AlphaFold
-
-**The simplest way to run AlphaFold is using the provided Docker script.** This
-was tested on Google Cloud with a machine using the `nvidia-gpu-cloud-image`
-with 12 vCPUs, 85 GB of RAM, a 100 GB boot disk, the databases on an additional
-3 TB disk, and an A100 GPU.
-
-1.  Clone this repository and `cd` into it.
-
-    ```bash
-    git clone https://github.com/deepmind/alphafold.git
-    ```
-
-1.  Modify `DOWNLOAD_DIR` in `docker/run_docker.py` to be the path to the
-    directory containing the downloaded databases.
-1.  Build the Docker image:
-
-    ```bash
-    docker build -f docker/Dockerfile -t alphafold .
-    ```
-
-1.  Install the `run_docker.py` dependencies. Note: You may optionally wish to
-    create a
-    [Python Virtual Environment](https://docs.python.org/3/tutorial/venv.html)
-    to prevent conflicts with your system's Python environment.
-
-    ```bash
-    pip3 install -r docker/requirements.txt
-    ```
-
-1.  Run `run_docker.py` pointing to a FASTA file containing the protein sequence
-    for which you wish to predict the structure. If you are predicting the
-    structure of a protein that is already in PDB and you wish to avoid using it
-    as a template, then `max_template_date` must be set to be before the release
-    date of the structure. For example, for the T1050 CASP14 target:
-
-    ```bash
-    python3 docker/run_docker.py --fasta_paths=T1050.fasta --max_template_date=2020-05-14
-    ```
-
-    By default, Alphafold will attempt to use all visible GPU devices. To use a
-    subset, specify a comma-separated list of GPU UUID(s) or index(es) using the
-    `--gpu_devices` flag. See
-    [GPU enumeration](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/user-guide.html#gpu-enumeration)
-    for more details.
-
-1.  You can control AlphaFold speed / quality tradeoff by adding
-    `--preset=reduced_dbs`, `--preset=full_dbs` or `--preset=casp14` to the run
-    command. We provide the following presets:
-
-    *   **reduced_dbs**: This preset is optimized for speed and lower hardware
-        requirements. It runs with a reduced version of the BFD database and
-        with no ensembling. It requires 8 CPU cores (vCPUs), 8 GB of RAM, and
-        600 GB of disk space.
-    *   **full_dbs**: The model in this preset is 8 times faster than the
-        `casp14` preset with a very minor quality drop (-0.1 average GDT drop on
-        CASP14 domains). It runs with all genetic databases and with no
-        ensembling.
-    *   **casp14**: This preset uses the same settings as were used in CASP14.
-        It runs with all genetic databases and with 8 ensemblings.
-
-    Running the command above with the `casp14` preset would look like this:
-
-    ```bash
-    python3 docker/run_docker.py --fasta_paths=T1050.fasta --max_template_date=2020-05-14 --preset=casp14
-    ```
-
-### AlphaFold output
-
-The outputs will be in a subfolder of `output_dir` in `run_docker.py`. They
-include the computed MSAs, unrelaxed structures, relaxed structures, ranked
-structures, raw model outputs, prediction metadata, and section timings. The
-`output_dir` directory will have the following structure:
-
-```
-<target_name>/
-    features.pkl
-    ranked_{0,1,2,3,4}.pdb
-    ranking_debug.json
-    relaxed_model_{1,2,3,4,5}.pdb
-    result_model_{1,2,3,4,5}.pkl
-    timings.json
-    unrelaxed_model_{1,2,3,4,5}.pdb
-    msas/
-        bfd_uniclust_hits.a3m
-        mgnify_hits.sto
-        uniref90_hits.sto
-```
-
-The contents of each output file are as follows:
-
-*   `features.pkl` – A `pickle` file containing the input feature NumPy arrays
-    used by the models to produce the structures.
-*   `unrelaxed_model_*.pdb` – A PDB format text file containing the predicted
-    structure, exactly as outputted by the model.
-*   `relaxed_model_*.pdb` – A PDB format text file containing the predicted
-    structure, after performing an Amber relaxation procedure on the unrelaxed
-    structure prediction (see Jumper et al. 2021, Suppl. Methods 1.8.6 for
-    details).
-*   `ranked_*.pdb` – A PDB format text file containing the relaxed predicted
-    structures, after reordering by model confidence. Here `ranked_0.pdb` should
-    contain the prediction with the highest confidence, and `ranked_4.pdb` the
-    prediction with the lowest confidence. To rank model confidence, we use
-    predicted LDDT (pLDDT) scores (see Jumper et al. 2021, Suppl. Methods 1.9.6
-    for details).
-*   `ranking_debug.json` – A JSON format text file containing the pLDDT values
-    used to perform the model ranking, and a mapping back to the original model
-    names.
-*   `timings.json` – A JSON format text file containing the times taken to run
-    each section of the AlphaFold pipeline.
-*   `msas/` - A directory containing the files describing the various genetic
-    tool hits that were used to construct the input MSA.
-*   `result_model_*.pkl` – A `pickle` file containing a nested dictionary of the
-    various NumPy arrays directly produced by the model. In addition to the
-    output of the structure module, this includes auxiliary outputs such as:
-
-    *   Distograms (`distogram/logits` contains a NumPy array of shape [N_res,
-        N_res, N_bins] and `distogram/bin_edges` contains the definition of the
-        bins).
-    *   Per-residue pLDDT scores (`plddt` contains a NumPy array of shape
-        [N_res] with the range of possible values from `0` to `100`, where `100`
-        means most confident). This can serve to identify sequence regions
-        predicted with high confidence or as an overall per-target confidence
-        score when averaged across residues.
-    *   Present only if using pTM models: predicted TM-score (`ptm` field
-        contains a scalar). As a predictor of a global superposition metric,
-        this score is designed to also assess whether the model is confident in
-        the overall domain packing.
-    *   Present only if using pTM models: predicted pairwise aligned errors
-        (`predicted_aligned_error` contains a NumPy array of shape [N_res,
-        N_res] with the range of possible values from `0` to
-        `max_predicted_aligned_error`, where `0` means most confident). This can
-        serve for a visualisation of domain packing confidence within the
-        structure.
-
-The pLDDT confidence measure is stored in the B-factor field of the output PDB
-files (although unlike a B-factor, higher pLDDT is better, so care must be taken
-when using for tasks such as molecular replacement).
-
-This code has been tested to match mean top-1 accuracy on a CASP14 test set with
-pLDDT ranking over 5 model predictions (some CASP targets were run with earlier
-versions of AlphaFold and some had manual interventions; see our forthcoming
-publication for details). Some targets such as T1064 may also have high
-individual run variance over random seeds.
-
-## Inferencing many proteins
-
-The provided inference script is optimized for predicting the structure of a
-single protein, and it will compile the neural network to be specialized to
-exactly the size of the sequence, MSA, and templates. For large proteins, the
-compile time is a negligible fraction of the runtime, but it may become more
-significant for small proteins or if the multi-sequence alignments are already
-precomputed. In the bulk inference case, it may make sense to use our
-`make_fixed_size` function to pad the inputs to a uniform size, thereby reducing
-the number of compilations required.
-
-We do not provide a bulk inference script, but it should be straightforward to
-develop on top of the `RunModel.predict` method with a parallel system for
-precomputing multi-sequence alignments. Alternatively, this script can be run
-repeatedly with only moderate overhead.
-
-## Note on reproducibility
-
-AlphaFold's output for a small number of proteins has high inter-run variance,
-and may be affected by changes in the input data. The CASP14 target T1064 is a
-notable example; the large number of SARS-CoV-2-related sequences recently
-deposited changes its MSA significantly. This variability is somewhat mitigated
-by the model selection process; running 5 models and taking the most confident.
-
-To reproduce the results of our CASP14 system as closely as possible you must
-use the same database versions we used in CASP. These may not match the default
-versions downloaded by our scripts.
-
-For genetics:
-
-*   UniRef90:
-    [v2020_01](https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-2020_01/uniref/)
-*   MGnify:
-    [v2018_12](http://ftp.ebi.ac.uk/pub/databases/metagenomics/peptide_database/2018_12/)
-*   Uniclust30: [v2018_08](http://wwwuser.gwdg.de/~compbiol/uniclust/2018_08/)
-*   BFD: [only version available](https://bfd.mmseqs.com/)
-
-For templates:
-
-*   PDB: (downloaded 2020-05-14)
-*   PDB70: [2020-05-13](http://wwwuser.gwdg.de/~compbiol/data/hhsuite/databases/hhsuite_dbs/old-releases/pdb70_from_mmcif_200513.tar.gz)
-
-An alternative for templates is to use the latest PDB and PDB70, but pass the
-flag `--max_template_date=2020-05-14`, which restricts templates only to
-structures that were available at the start of CASP14.
 
 ## Citing this work
 
@@ -344,49 +52,7 @@ If you use the code or data in this package, please cite:
   pages   = {583--589},
   doi     = {10.1038/s41586-021-03819-2}
 }
-```
-
-## Community contributions
-
-Colab notebooks provided by the community (please note that these notebooks may
-vary from our full AlphaFold system and we did not validate their accuracy):
-
-*   The [ColabFold AlphaFold2 notebook](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb)
-    by Martin Steinegger, Sergey Ovchinnikov and Milot Mirdita, which uses an
-    API hosted at the Södinglab based on the MMseqs2 server [(Mirdita et al.
-    2019, Bioinformatics)](https://academic.oup.com/bioinformatics/article/35/16/2856/5280135)
-    for the multiple sequence alignment creation.
-
-## Acknowledgements
-
-AlphaFold communicates with and/or references the following separate libraries
-and packages:
-
-*   [Abseil](https://github.com/abseil/abseil-py)
-*   [Biopython](https://biopython.org)
-*   [Chex](https://github.com/deepmind/chex)
-*   [Colab](https://research.google.com/colaboratory/)
-*   [Docker](https://www.docker.com)
-*   [HH Suite](https://github.com/soedinglab/hh-suite)
-*   [HMMER Suite](http://eddylab.org/software/hmmer)
-*   [Haiku](https://github.com/deepmind/dm-haiku)
-*   [Immutabledict](https://github.com/corenting/immutabledict)
-*   [JAX](https://github.com/google/jax/)
-*   [Kalign](https://msa.sbc.su.se/cgi-bin/msa.cgi)
-*   [matplotlib](https://matplotlib.org/)
-*   [ML Collections](https://github.com/google/ml_collections)
-*   [NumPy](https://numpy.org)
-*   [OpenMM](https://github.com/openmm/openmm)
-*   [OpenStructure](https://openstructure.org)
-*   [pymol3d](https://github.com/avirshup/py3dmol)
-*   [SciPy](https://scipy.org)
-*   [Sonnet](https://github.com/deepmind/sonnet)
-*   [TensorFlow](https://github.com/tensorflow/tensorflow)
-*   [Tree](https://github.com/deepmind/tree)
-*   [tqdm](https://github.com/tqdm/tqdm)
-
-We thank all their contributors and maintainers!
-
+`
 ## License and Disclaimer
 
 This is not an officially supported Google product.
