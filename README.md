@@ -2,7 +2,7 @@
 
 # AlphaFold
 
-We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal one for install instructions at [deepmind/alphafold](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
+We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal [README.md](README.orig.md) for install instructions at [deepmind/alphafold](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
 
 Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
 
