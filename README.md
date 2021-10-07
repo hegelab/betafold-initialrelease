@@ -1,11 +1,8 @@
-<p>
- <img src="imgs/header.jpg" width="600"/>
- <img src="imgs/af_hegelab.png" width="600"/>
-</p>
+![header](imgs/header.jpg)
 
 # AlphaFold
 
-We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal one for install instructions at [deepmind alphafold2](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
+We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal one for install instructions at [deepmind/alphafold](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
 
 Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
 
@@ -22,6 +19,9 @@ Some of our AF2 runs with short sequences (~250 a.a.) consumed all of our memory
 ### "ValueError: Cannot create a tensor proto whose content is larger than 2GB."
 (https://github.com/deepmind/alphafold/issues/71)
 If your protein is highly conserved then the alignment may result in a large data set that does not fit TensorFlow's hard coded 2Gb limit. Theoretically, the call to `jackhmmer_uniref90_result` in `alphafold/data/pipeline.py` should be limited  to `uniref_max_hits: int = 10000`. However, this does not happen. You can find an [easy fix for this at alphafold.hegelab.org](http://alphafold.hegelab.org/) that avoid to use this fork. However, we also fixed other memory problems with the previous fix. So if you use this fork, this "ValueError...2GB" issue is obsolete for you.
+
+![hegelab.org](imgs/af_hegelab.png)
+
 
 # Important notices - from the original README.md file
 
@@ -52,7 +52,8 @@ If you use the code or data in this package, please cite:
   pages   = {583--589},
   doi     = {10.1038/s41586-021-03819-2}
 }
-`
+```
+
 ## License and Disclaimer
 
 This is not an officially supported Google product.
