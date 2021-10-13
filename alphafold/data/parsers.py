@@ -229,7 +229,7 @@ def get_sto_a3m(sto_path: str, max_sequences: int) -> Tuple[str, str]:
   sto_seq = ""
   sto_head = ""
 
-  with open(sto_path) as sto_fh, open("/mnt/afold/afkalinin/alphafold/log.txt", 'w') as lfh:
+  with open(sto_path) as sto_fh:
 
     for i in range(4):
       line = sto_fh.readline()
