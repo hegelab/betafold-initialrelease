@@ -464,9 +464,6 @@ def run_pipeline(
   # perform this check before `clean_protein`.
   _check_residues_are_well_defined(prot)
   pdb_string = clean_protein(prot, checks=checks)
-  #testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", "after_cleaning.pdb")
-  #with open(testpath, 'w') as f:
-  #  f.write(pdb_string)
   
   exclude_residues = exclude_residues or []
   exclude_residues = set(exclude_residues)
@@ -490,9 +487,6 @@ def run_pipeline(
             pass
         L.append(ln)
       pdb_string = "".join(L)
-      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_settingchainid_{iteration}.pdb")
-      with open(testpath, 'w') as f:
-        f.write(pdb_string)
 
       fixer = pdbfixer.PDBFixer(pdbfile=io.StringIO(pdb_string))
       fixer.findMissingResidues()
@@ -502,9 +496,6 @@ def run_pipeline(
       fixer.addMissingAtoms()
       fixer.addMissingHydrogens()
       pdb_string = _get_pdb_string(fixer.topology, fixer.positions)
-      # testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_fixing_{iteration}.pdb")
-      # with open(testpath, 'w') as f:
-      #   f.write(pdb_string)
 
     ret = _run_one_iteration(
         pdb_string=pdb_string,
@@ -516,9 +507,6 @@ def run_pipeline(
         max_attempts=max_attempts)
 
     pdb_string = ret["min_pdb"]
-    testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}a.pdb")
-    with open(testpath, 'w') as f:
-      f.write(pdb_string)
     if chainD:
       L = []
       for ln in io.StringIO(pdb_string).readlines():
@@ -531,16 +519,10 @@ def run_pipeline(
             pass
         L.append(ln)
       pdb_string = "".join(L)
-      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}b.pdb")
-      with open(testpath, 'w') as f:
-        f.write(pdb_string)
 
     prot = protein.from_pdb_string(pdb_string)
     if place_hydrogens_every_iteration:
       pdb_string = clean_protein(prot, checks=True)
-      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}c.pdb")
-      with open(testpath, 'w') as f:
-        f.write(pdb_string)
     else:
       pdb_string = ret["min_pdb"]
     ret.update(get_violation_metrics(prot))
