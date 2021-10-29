@@ -128,7 +128,7 @@ def parse_stockholm(
   return msa, deletion_matrix, list(name_to_sequence.keys())
 
 
-def parse_a3m(a3m_string: str) -> Tuple[Sequence[str], DeletionMatrix]:
+def parse_a3m(a3m_string: str, max_sequences: int = 0) -> Tuple[Sequence[str], DeletionMatrix]:
   """Parses sequences and deletion matrix from a3m format alignment.
 
   Args:
@@ -144,6 +144,8 @@ def parse_a3m(a3m_string: str) -> Tuple[Sequence[str], DeletionMatrix]:
         the aligned sequence i at residue position j.
   """
   sequences, _ = parse_fasta(a3m_string)
+  if max_sequences:
+    sequences = sequences[:max_sequences]
   deletion_matrix = []
   for msa_sequence in sequences:
     deletion_vec = []

@@ -29,13 +29,16 @@ from alphafold.data.tools import hhsearch
 from alphafold.data.tools import jackhmmer
 import numpy as np
 
+import configparser
+from alphafold.common.hutils import getconf_resix
+
 # Internal import (7716).
 
 FeatureDict = Mapping[str, np.ndarray]
 
 
 def make_sequence_features(
-    sequence: str, description: str, num_res: int) -> FeatureDict:
+    sequence: str, description: str, num_res: int, hconfig=None) -> FeatureDict:
   """Constructs a feature dict of sequence features."""
   features = {}
   features['aatype'] = residue_constants.sequence_to_onehot(
@@ -45,7 +48,19 @@ def make_sequence_features(
   features['between_segment_residues'] = np.zeros((num_res,), dtype=np.int32)
   features['domain_name'] = np.array([description.encode('utf-8')],
                                      dtype=np.object_)
+
   features['residue_index'] = np.array(range(num_res), dtype=np.int32)
+  if hconfig:
+    resix = getconf_resix(hconfig)
+    if resix:
+      if len(resix) != num_res:
+        raise ValueError('The sum of protomer size parameters provided in the '
+                         '[sequence_features] section of the config file is'
+                         'not the same as the sequence length (num_res) '
+                         'in the input fasta file')
+
+      features['residue_index'] = resix
+  
   features['seq_length'] = np.array([num_res] * num_res, dtype=np.int32)
   features['sequence'] = np.array([sequence.encode('utf-8')], dtype=np.object_)
   return features
@@ -98,7 +113,8 @@ class DataPipeline:
                template_featurizer: templates.TemplateHitFeaturizer,
                use_small_bfd: bool,
                mgnify_max_hits: int = 501,
-               uniref_max_hits: int = 10000):
+               uniref_max_hits: int = 10000,
+               bfd_max_hits: int = 0):
     """Constructs a feature dict for a given FASTA file."""
     self._use_small_bfd = use_small_bfd
     self.jackhmmer_uniref90_runner = jackhmmer.Jackhmmer(
@@ -121,8 +137,9 @@ class DataPipeline:
     self.template_featurizer = template_featurizer
     self.mgnify_max_hits = mgnify_max_hits
     self.uniref_max_hits = uniref_max_hits
+    self.bfd_max_hits = bfd_max_hits
 
-  def process(self, input_fasta_path: str, msa_output_dir: str) -> FeatureDict:
+  def process(self, input_fasta_path: str, msa_output_dir: str, hconfig=None) -> FeatureDict:
     """Runs alignment tools on the input sequence and creates features."""
     with open(input_fasta_path) as f:
       input_fasta_str = f.read()
@@ -134,43 +151,52 @@ class DataPipeline:
     input_description = input_descs[0]
     num_res = len(input_sequence)
 
+    # moved earlier to overcome possible errors
+    # before the long jackhmmer queries
+    sequence_features = make_sequence_features(
+        sequence=input_sequence,
+        description=input_description,
+        num_res=num_res,
+        hconfig=hconfig)
+
+    do_run = hconfig.getboolean("jackhmmer_uniref90", "do_run", fallback=True)
+    max_hits = hconfig.getint("jackhmmer_uniref90", "max_hits", fallback=self.uniref_max_hits)
+    logging.info("hege: running jack uniref90")
     jackhmmer_uniref90_result = self.jackhmmer_uniref90_runner.query(
       input_fasta_path,
       sto_path=os.path.join(msa_output_dir, 'uniref90_hits.sto'),
-      max_hits=self.uniref_max_hits,
-      a3m_needed=True)[0]
+      max_hits=max_hits,
+      a3m_needed=True,
+      do_run=do_run)[0]
+    do_run = hconfig.getboolean("jackhmmer_mgnify", "do_run", fallback=True)
+    max_hits = hconfig.getint("jackhmmer_mgnify", "max_hits", fallback=self.mgnify_max_hits)
+    logging.info("hege: running jack mgnify")
     jackhmmer_mgnify_result = self.jackhmmer_mgnify_runner.query(
       input_fasta_path,
       sto_path=os.path.join(msa_output_dir, 'mgnify_hits.sto'),
       max_hits=self.mgnify_max_hits,
-      a3m_needed=False)[0]
+      a3m_needed=False,
+      do_run=do_run)[0]
 
     # uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(
     #     jackhmmer_uniref90_result['sto'], max_sequences=self.uniref_max_hits)
     uniref90_msa_as_a3m = jackhmmer_uniref90_result['a3m']
-    hhsearch_result = self.hhsearch_pdb70_runner.query(uniref90_msa_as_a3m)
-
-    # uniref90_out_path = os.path.join(msa_output_dir, 'uniref90_hits.sto')
-    # with open(uniref90_out_path, 'w') as f:
-    #   f.write(jackhmmer_uniref90_result['sto'])
-
-    # mgnify_out_path = os.path.join(msa_output_dir, 'mgnify_hits.sto')
-    # with open(mgnify_out_path, 'w') as f:
-    #   f.write(jackhmmer_mgnify_result['sto'])
-
+    do_run = hconfig.getboolean("hhsearch_pdb70", "do_run", fallback=True)
     pdb70_out_path = os.path.join(msa_output_dir, 'pdb70_hits.hhr')
-    with open(pdb70_out_path, 'w') as f:
-      f.write(hhsearch_result)
+    if do_run:
+      logging.info("*** hege: running hhsearch pdb70 ***")
+      hhsearch_result = self.hhsearch_pdb70_runner.query(uniref90_msa_as_a3m)
+      with open(pdb70_out_path, 'w') as f:
+        f.write(hhsearch_result)
+    else:
+      with open(pdb70_out_path, 'r') as f:
+        hhsearch_result = f.read()
+    hhsearch_hits = parsers.parse_hhr(hhsearch_result)
 
     uniref90_msa, uniref90_deletion_matrix, _ = parsers.parse_stockholm(
         jackhmmer_uniref90_result['sto'])
     mgnify_msa, mgnify_deletion_matrix, _ = parsers.parse_stockholm(
         jackhmmer_mgnify_result['sto'])
-    hhsearch_hits = parsers.parse_hhr(hhsearch_result)
-    # uniref90_msa = uniref90_msa[:self.uniref_max_hits]  # hege
-    # uniref90_deletion_matrix = uniref90_deletion_matrix[:self.uniref_max_hits] # hege
-    # mgnify_msa = mgnify_msa[:self.mgnify_max_hits]
-    # mgnify_deletion_matrix = mgnify_deletion_matrix[:self.mgnify_max_hits]
 
     if self._use_small_bfd:
       jackhmmer_small_bfd_result = self.jackhmmer_small_bfd_runner.query(
@@ -183,27 +209,28 @@ class DataPipeline:
       bfd_msa, bfd_deletion_matrix, _ = parsers.parse_stockholm(
           jackhmmer_small_bfd_result['sto'])
     else:
-      hhblits_bfd_uniclust_result = self.hhblits_bfd_uniclust_runner.query(
-          input_fasta_path)
-
+      do_run = hconfig.getboolean("hhblits_bfd_uniclust", "do_run", fallback=True)
       bfd_out_path = os.path.join(msa_output_dir, 'bfd_uniclust_hits.a3m')
-      with open(bfd_out_path, 'w') as f:
-        f.write(hhblits_bfd_uniclust_result['a3m'])
+      if do_run:
+        hhblits_bfd_uniclust_result_a3m = self.hhblits_bfd_uniclust_runner.query(
+          input_fasta_path)['a3m']
+        with open(bfd_out_path, 'w') as f:
+          f.write(hhblits_bfd_uniclust_result_a3m)
+      else:
+        with open(bfd_out_path, 'r') as f:
+          hhblits_bfd_uniclust_result_a3m = f.read()
 
       bfd_msa, bfd_deletion_matrix = parsers.parse_a3m(
-          hhblits_bfd_uniclust_result['a3m'])
+          hhblits_bfd_uniclust_result_a3m)
 
+    logging.info("*** hege: get templates ***")
     templates_result = self.template_featurizer.get_templates(
         query_sequence=input_sequence,
         query_pdb_code=None,
         query_release_date=None,
         hits=hhsearch_hits)
 
-    sequence_features = make_sequence_features(
-        sequence=input_sequence,
-        description=input_description,
-        num_res=num_res)
-
+    logging.info("*** hege: get msa features ***")
     msa_features = make_msa_features(
         msas=(uniref90_msa, bfd_msa, mgnify_msa),
         deletion_matrices=(uniref90_deletion_matrix,

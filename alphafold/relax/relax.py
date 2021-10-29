@@ -53,28 +53,32 @@ class AmberRelaxation(object):
     self._max_outer_iterations = max_outer_iterations
 
   def process(self, *,
-              prot: protein.Protein) -> Tuple[str, Dict[str, Any], np.ndarray]:
+              prot: protein.Protein,
+              chainD: Dict[int, str]) -> Tuple[str, Dict[str, Any], np.ndarray]:
     """Runs Amber relax on a prediction, adds hydrogens, returns PDB string."""
     out = amber_minimize.run_pipeline(
         prot=prot, max_iterations=self._max_iterations,
         tolerance=self._tolerance, stiffness=self._stiffness,
         exclude_residues=self._exclude_residues,
-        max_outer_iterations=self._max_outer_iterations)
+        max_outer_iterations=self._max_outer_iterations,
+        chainD=chainD)
     min_pos = out['pos']
     start_pos = out['posinit']
-    rmsd = np.sqrt(np.sum((start_pos - min_pos)**2) / start_pos.shape[0])
+    # rmsd = np.sqrt(np.sum((start_pos - min_pos)**2) / start_pos.shape[0])
+    rmsd = -1
     debug_data = {
         'initial_energy': out['einit'],
         'final_energy': out['efinal'],
         'attempts': out['min_attempts'],
         'rmsd': rmsd
     }
-    pdb_str = amber_minimize.clean_protein(prot)
-    min_pdb = utils.overwrite_pdb_coordinates(pdb_str, min_pos)
-    min_pdb = utils.overwrite_b_factors(min_pdb, prot.b_factors)
-    utils.assert_equal_nonterminal_atom_types(
-        protein.from_pdb_string(min_pdb).atom_mask,
-        prot.atom_mask)
+    #pdb_str = amber_minimize.clean_protein(prot)
+    #min_pdb = utils.overwrite_pdb_coordinates(pdb_str, min_pos)
+    #min_pdb = utils.overwrite_b_factors(min_pdb, prot.b_factors)
+    min_pdb = out['min_pdb']
+    #utils.assert_equal_nonterminal_atom_types(
+    #    protein.from_pdb_string(min_pdb).atom_mask,
+    #    prot.atom_mask)
     violations = out['structural_violations'][
         'total_per_residue_violations_mask']
     return min_pdb, debug_data, violations

@@ -36,6 +36,9 @@ from alphafold.relax import relax
 import numpy as np
 # Internal import (7716).
 
+import configparser
+from alphafold.common.hutils import getconf_chains
+
 flags.DEFINE_list('fasta_paths', None, 'Paths to FASTA files, each containing '
                   'one sequence. Paths should be separated by commas. '
                   'All FASTA paths must have a unique basename as the '
@@ -88,6 +91,8 @@ flags.DEFINE_integer('random_seed', None, 'The random seed for the data '
                      'that even if this is set, Alphafold may still not be '
                      'deterministic, because processes like GPU inference are '
                      'nondeterministic.')
+flags.DEFINE_string("config_file", None, 'Configuration file with arguments '
+                    'and parameters.')
 FLAGS = flags.FLAGS
 
 MAX_TEMPLATE_HITS = 20
@@ -112,101 +117,150 @@ def predict_structure(
     model_runners: Dict[str, model.RunModel],
     amber_relaxer: relax.AmberRelaxation,
     benchmark: bool,
-    random_seed: int):
+    random_seed: int,
+    hconfig: configparser.ConfigParser = None):
   """Predicts structure using AlphaFold for the given sequence."""
   timings = {}
-  output_dir = os.path.join(output_dir_base, fasta_name)
+  output_dir = hconfig.get("paths", "output_dir", fallback=os.path.join(output_dir_base, fasta_name))
   if not os.path.exists(output_dir):
     os.makedirs(output_dir)
   msa_output_dir = os.path.join(output_dir, 'msas')
   if not os.path.exists(msa_output_dir):
     os.makedirs(msa_output_dir)
 
-  # Get features.
-  t_0 = time.time()
-  feature_dict = data_pipeline.process(
-      input_fasta_path=fasta_path,
-      msa_output_dir=msa_output_dir)
-  timings['features'] = time.time() - t_0
+  running_get_features = hconfig.getboolean("steps", "get_features", fallback=True)
 
-  # Write out features as a pickled dictionary.
-  features_output_path = os.path.join(output_dir, 'features.pkl')
-  with open(features_output_path, 'wb') as f:
-    pickle.dump(feature_dict, f, protocol=4)
+  if running_get_features:
+    logging.info("*** hege: running get_features")
+    # Get features.
+    t_0 = time.time()
+    feature_dict = data_pipeline.process(
+        input_fasta_path=fasta_path,
+        msa_output_dir=msa_output_dir,
+        hconfig=hconfig)
+    timings['features'] = time.time() - t_0
 
-  relaxed_pdbs = {}
-  plddts = {}
+    # Write out features as a pickled dictionary.
+    features_output_path = os.path.join(output_dir, 'features.pkl')
+    with open(features_output_path, 'wb') as f:
+      pickle.dump(feature_dict, f, protocol=4)
+    timings_output_path = os.path.join(output_dir, 'timings-features.json')
+    with open(timings_output_path, 'w') as f:
+      f.write(json.dumps(timings, indent=4))
+
+  # loading from previous one
+  else:
+    logging.info("*** hege: skipping running get_features, loading from prev run")
+    features_output_path = os.path.join(output_dir, 'features.pkl')
+    feature_dict = pickle.load(open(features_output_path, 'rb'))
 
   # Run the models.
-  for model_name, model_runner in model_runners.items():
-    logging.info('Running model %s', model_name)
-    t_0 = time.time()
-    processed_feature_dict = model_runner.process_features(
-        feature_dict, random_seed=random_seed)
-    timings[f'process_features_{model_name}'] = time.time() - t_0
-
-    t_0 = time.time()
-    prediction_result = model_runner.predict(processed_feature_dict)
-    t_diff = time.time() - t_0
-    timings[f'predict_and_compile_{model_name}'] = t_diff
-    logging.info(
-        'Total JAX model %s predict time (includes compilation time, see --benchmark): %.0f?',
-        model_name, t_diff)
-
-    if benchmark:
+  running_models = hconfig.getboolean("steps", "run_models", fallback=True)
+  if running_models:
+    logging.info("*** hege: running models")
+    plddts = {}
+    for model_name, model_runner in model_runners.items():
+      logging.info('Running model %s', model_name)
       t_0 = time.time()
-      model_runner.predict(processed_feature_dict)
-      timings[f'predict_benchmark_{model_name}'] = time.time() - t_0
+      processed_feature_dict = model_runner.process_features(
+          feature_dict, random_seed=random_seed)
+      timings[f'process_features_{model_name}'] = time.time() - t_0
 
-    # Get mean pLDDT confidence metric.
-    plddt = prediction_result['plddt']
-    plddts[model_name] = np.mean(plddt)
+      t_0 = time.time()
+      prediction_result = model_runner.predict(processed_feature_dict)
+      t_diff = time.time() - t_0
+      timings[f'predict_and_compile_{model_name}'] = t_diff
+      logging.info(
+          'Total JAX model %s predict time (includes compilation time, see --benchmark): %.0f?',
+          model_name, t_diff)
 
-    # Save the model outputs.
-    result_output_path = os.path.join(output_dir, f'result_{model_name}.pkl')
-    with open(result_output_path, 'wb') as f:
-      pickle.dump(prediction_result, f, protocol=4)
+      if benchmark:
+        t_0 = time.time()
+        model_runner.predict(processed_feature_dict)
+        timings[f'predict_benchmark_{model_name}'] = time.time() - t_0
 
-    # Add the predicted LDDT in the b-factor column.
-    # Note that higher predicted LDDT value means higher model confidence.
-    plddt_b_factors = np.repeat(
-        plddt[:, None], residue_constants.atom_type_num, axis=-1)
-    unrelaxed_protein = protein.from_prediction(
-        features=processed_feature_dict,
-        result=prediction_result,
-        b_factors=plddt_b_factors)
+      # Get mean pLDDT confidence metric.
+      plddt = prediction_result['plddt']
+      plddts[model_name] = np.mean(plddt)
 
-    unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
-    with open(unrelaxed_pdb_path, 'w') as f:
-      f.write(protein.to_pdb(unrelaxed_protein))
+      # Save the model outputs.
+      result_output_path = os.path.join(output_dir, f'result_{model_name}.pkl')
+      with open(result_output_path, 'wb') as f:
+        pickle.dump(prediction_result, f, protocol=4)
 
-    # Relax the prediction.
-    t_0 = time.time()
-    relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein)
-    timings[f'relax_{model_name}'] = time.time() - t_0
+      # Add the predicted LDDT in the b-factor column.
+      # Note that higher predicted LDDT value means higher model confidence.
+      plddt_b_factors = np.repeat(
+          plddt[:, None], residue_constants.atom_type_num, axis=-1)
+      unrelaxed_protein = protein.from_prediction(  # This is a Protein object
+          features=processed_feature_dict,
+          result=prediction_result,
+          b_factors=plddt_b_factors)
 
-    relaxed_pdbs[model_name] = relaxed_pdb_str
+      unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
+      with open(unrelaxed_pdb_path, 'w') as f:
+        f.write(protein.to_pdb(unrelaxed_protein))
+      # unrelaxed_pkl_path = os.path.join(output_dir, f'unrelaxed_protein_{model_name}.pkl')
+      # with open(unrelaxed_pkl_path, 'wb') as f:
+      #   pickle.dump(unrelaxed_protein, f)
 
-    # Save the relaxed PDB.
-    relaxed_output_path = os.path.join(output_dir, f'relaxed_{model_name}.pdb')
-    with open(relaxed_output_path, 'w') as f:
-      f.write(relaxed_pdb_str)
+    plddts_pkl_path = os.path.join(output_dir, 'ranking_debug.json')
+    with open(plddts_pkl_path, 'w') as f:
+      json.dump({'plddts': plddts}, f)
 
-  # Rank by pLDDT and write out relaxed PDBs in rank order.
-  ranked_order = []
-  for idx, (model_name, _) in enumerate(
-      sorted(plddts.items(), key=lambda x: x[1], reverse=True)):
-    ranked_order.append(model_name)
-    ranked_output_path = os.path.join(output_dir, f'ranked_{idx}.pdb')
-    with open(ranked_output_path, 'w') as f:
-      f.write(relaxed_pdbs[model_name])
+    timings_output_path = os.path.join(output_dir, 'timings-models.json')
+    with open(timings_output_path, 'w') as f:
+      f.write(json.dumps(timings, indent=4))
 
-  ranking_output_path = os.path.join(output_dir, 'ranking_debug.json')
-  with open(ranking_output_path, 'w') as f:
-    f.write(json.dumps({'plddts': plddts, 'order': ranked_order}, indent=4))
+  else:
+    logging.info("*** hege: skipping running models")
+      
+  # RUNNING RELAX
+  running_relax = hconfig.getboolean("steps", "run_relax", fallback=True)
+  if running_relax:
+    logging.info("*** hege: running relax")
 
+    plddts_path = os.path.join(output_dir, f'ranking_debug.json')
+    plddts = json.load(open(plddts_path))['plddts']
+
+    resiD = None
+    if hconfig:
+      chainD = getconf_chains(hconfig)
+    
+    ranked_order = []
+    for idx, (model_name, _) in enumerate(
+        sorted(plddts.items(), key=lambda x: x[1], reverse=True)):
+      ranked_order.append(model_name)
+
+    relax_models = hconfig.get("relax", "models", fallback="model_1,model_2,model_3,model_4,model_5")
+    if relax_models == "top":
+      relax_models == ranked_order[0]
+
+    for model_name in relax_models.split(","):
+      unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
+      # unrelaxed_protein = pickle.load(open(unrelaxed_pdb_path, 'rb'))
+      unrelaxed_protein = protein.from_pdb_string(open(unrelaxed_pdb_path).read())
+      
+      # Relax the prediction.
+      t_0 = time.time()
+      relaxed_pdb_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein, chainD=chainD)
+      timings[f'relax_{model_name}'] = time.time() - t_0
+
+      # Save the relaxed PDB.
+      relaxed_output_path = os.path.join(output_dir, f'relaxed_{model_name}.pdb')
+      with open(relaxed_output_path, 'w') as f:
+        f.write(relaxed_pdb_str)
+
+      idx = ranked_order.index(model_name)
+      ranked_output_path = os.path.join(output_dir, f'ranked_{idx}.pdb')
+      with open(ranked_output_path, 'w') as f:
+        f.write(relaxed_pdb_str)
+
+    ranking_output_path = os.path.join(output_dir, 'ranking_debug.json')
+    with open(ranking_output_path, 'w') as f:
+      f.write(json.dumps({'plddts': plddts, 'order': ranked_order}, indent=4))
+      
   logging.info('Final timings for %s: %s', fasta_name, timings)
-
   timings_output_path = os.path.join(output_dir, 'timings.json')
   with open(timings_output_path, 'w') as f:
     f.write(json.dumps(timings, indent=4))
@@ -229,29 +283,46 @@ def main(argv):
   elif FLAGS.preset == 'casp14':
     num_ensemble = 8
 
+  # hegelab
+  hconfig = configparser.ConfigParser()
+  if FLAGS.config_file:
+    hconfig.read([fn for fn in FLAGS.config_file.split(",")])
+
   # Check for duplicate FASTA file names.
   fasta_names = [pathlib.Path(p).stem for p in FLAGS.fasta_paths]
   if len(fasta_names) != len(set(fasta_names)):
     raise ValueError('All FASTA paths must have a unique basename.')
 
+  template_mmcif_dir = hconfig.get("paths", "template_mmcif_dir", fallback=FLAGS.template_mmcif_dir)
+  obsolete_pdbs_path = hconfig.get("paths", "obsolete_pdbs_path", fallback=FLAGS.obsolete_pdbs_path)
+  max_template_hits = hconfig.get("hhsearch_pdb70", "max_template_hits", fallback=MAX_TEMPLATE_HITS)
+  max_template_date = hconfig.get("hhsearch_pdb70", "max_template_date", fallback=FLAGS.max_template_date)
+  
   template_featurizer = templates.TemplateHitFeaturizer(
-      mmcif_dir=FLAGS.template_mmcif_dir,
-      max_template_date=FLAGS.max_template_date,
-      max_hits=MAX_TEMPLATE_HITS,
+      mmcif_dir=template_mmcif_dir,
+      max_template_date=max_template_date,
+      max_hits=max_template_hits,
       kalign_binary_path=FLAGS.kalign_binary_path,
       release_dates_path=None,
-      obsolete_pdbs_path=FLAGS.obsolete_pdbs_path)
+      obsolete_pdbs_path=obsolete_pdbs_path)
 
+  uniref90_database_path = hconfig.get("paths", "uniref90_database_path", fallback=FLAGS.uniref90_database_path)
+  mgnify_database_path = hconfig.get("paths", "mgnify_database_path", fallback=FLAGS.mgnify_database_path)
+  bfd_database_path = hconfig.get("paths", "bfd_database_path", fallback=FLAGS.bfd_database_path)
+  uniclust30_database_path = hconfig.get("paths", "uniclust30_database_path", fallback=FLAGS.uniclust30_database_path)
+  small_bfd_database_path = hconfig.get("paths", "small_bfd_database_path", fallback=FLAGS.small_bfd_database_path)
+  pdb70_database_path = hconfig.get("paths", "pdb70_database_path", fallback=FLAGS.pdb70_database_path)
+  
   data_pipeline = pipeline.DataPipeline(
       jackhmmer_binary_path=FLAGS.jackhmmer_binary_path,
       hhblits_binary_path=FLAGS.hhblits_binary_path,
       hhsearch_binary_path=FLAGS.hhsearch_binary_path,
-      uniref90_database_path=FLAGS.uniref90_database_path,
-      mgnify_database_path=FLAGS.mgnify_database_path,
-      bfd_database_path=FLAGS.bfd_database_path,
-      uniclust30_database_path=FLAGS.uniclust30_database_path,
-      small_bfd_database_path=FLAGS.small_bfd_database_path,
-      pdb70_database_path=FLAGS.pdb70_database_path,
+      uniref90_database_path=uniref90_database_path,
+      mgnify_database_path=mgnify_database_path,
+      bfd_database_path=bfd_database_path,
+      uniclust30_database_path=uniclust30_database_path,
+      small_bfd_database_path=small_bfd_database_path,
+      pdb70_database_path=pdb70_database_path,
       template_featurizer=template_featurizer,
       use_small_bfd=use_small_bfd)
 
@@ -289,7 +360,8 @@ def main(argv):
         model_runners=model_runners,
         amber_relaxer=amber_relaxer,
         benchmark=FLAGS.benchmark,
-        random_seed=random_seed)
+        random_seed=random_seed,
+        hconfig=hconfig)
 
 
 if __name__ == '__main__':

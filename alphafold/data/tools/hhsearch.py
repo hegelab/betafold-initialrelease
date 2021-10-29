@@ -17,7 +17,7 @@
 import glob
 import os
 import subprocess
-from typing import Sequence
+from typing import Sequence, Optional
 
 from absl import logging
 
@@ -88,4 +88,5 @@ class HHSearch:
 
       with open(hhr_path) as f:
         hhr = f.read()
+
     return hhr

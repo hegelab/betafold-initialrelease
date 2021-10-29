@@ -16,7 +16,7 @@
 
 import io
 import time
-from typing import Collection, Optional, Sequence
+from typing import Collection, Optional, Sequence, Dict
 
 from absl import logging
 from alphafold.common import protein
@@ -31,6 +31,8 @@ from simtk import unit
 from simtk.openmm import app as openmm_app
 from simtk.openmm.app.internal.pdbstructure import PdbStructure
 
+import os
+import pdbfixer
 
 ENERGY = unit.kilocalories_per_mole
 LENGTH = unit.angstroms
@@ -171,6 +173,8 @@ def clean_protein(
   fixed_pdb = cleanup.fix_pdb(pdb_file, alterations_info)
   fixed_pdb_file = io.StringIO(fixed_pdb)
   pdb_structure = PdbStructure(fixed_pdb_file)
+  as_file = openmm_app.PDBFile(pdb_structure)
+  pdb_string = _get_pdb_string(as_file.getTopology(), as_file.getPositions())
   cleanup.clean_structure(pdb_structure, alterations_info)
 
   logging.info("alterations info: %s", alterations_info)
@@ -400,17 +404,17 @@ def _run_one_iteration(
   attempts = 0
   while not minimized and attempts < max_attempts:
     attempts += 1
-    try:
-      logging.info("Minimizing protein, attempt %d of %d.",
-                   attempts, max_attempts)
-      ret = _openmm_minimize(
-          pdb_string, max_iterations=max_iterations,
-          tolerance=tolerance, stiffness=stiffness,
-          restraint_set=restraint_set,
-          exclude_residues=exclude_residues)
-      minimized = True
-    except Exception as e:  # pylint: disable=broad-except
-      logging.info(e)
+    #try:
+    logging.info("Minimizing protein, attempt %d of %d.",
+                 attempts, max_attempts)
+    ret = _openmm_minimize(
+      pdb_string, max_iterations=max_iterations,
+      tolerance=tolerance, stiffness=stiffness,
+      restraint_set=restraint_set,
+      exclude_residues=exclude_residues)
+    minimized = True
+    # except Exception as e:  # pylint: disable=broad-except
+    #   logging.info(e)
   if not minimized:
     raise ValueError(f"Minimization failed after {max_attempts} attempts.")
   ret["opt_time"] = time.time() - start
@@ -428,7 +432,8 @@ def run_pipeline(
     restraint_set: str = "non_hydrogen",
     max_attempts: int = 100,
     checks: bool = True,
-    exclude_residues: Optional[Sequence[int]] = None):
+    exclude_residues: Optional[Sequence[int]] = None,
+    chainD: Dict[int, str] = None):
   """Run iterative amber relax.
 
   Successive relax iterations are performed until all violations have been
@@ -459,13 +464,48 @@ def run_pipeline(
   # perform this check before `clean_protein`.
   _check_residues_are_well_defined(prot)
   pdb_string = clean_protein(prot, checks=checks)
-
+  #testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", "after_cleaning.pdb")
+  #with open(testpath, 'w') as f:
+  #  f.write(pdb_string)
+  
   exclude_residues = exclude_residues or []
   exclude_residues = set(exclude_residues)
   violations = np.inf
   iteration = 0
 
+  # rename chain(s)
+  # "ATOM   5096  N   MET A1002"
+  chainid_pos = 21
+
   while violations > 0 and iteration < max_outer_iterations:
+
+    if chainD:
+      L = []
+      for ln in io.StringIO(pdb_string).readlines():
+        if ln.startswith("ATOM"):
+          try:
+            resi = int(ln[chainid_pos+1:chainid_pos+5])
+            ln = ln[:chainid_pos] + chainD[resi] + ln[chainid_pos+5:]
+          except Exception:
+            pass
+        L.append(ln)
+      pdb_string = "".join(L)
+      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_settingchainid_{iteration}.pdb")
+      with open(testpath, 'w') as f:
+        f.write(pdb_string)
+
+      fixer = pdbfixer.PDBFixer(pdbfile=io.StringIO(pdb_string))
+      fixer.findMissingResidues()
+      fixer.findNonstandardResidues()
+      fixer.replaceNonstandardResidues()
+      fixer.findMissingAtoms()
+      fixer.addMissingAtoms()
+      fixer.addMissingHydrogens()
+      pdb_string = _get_pdb_string(fixer.topology, fixer.positions)
+      # testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_fixing_{iteration}.pdb")
+      # with open(testpath, 'w') as f:
+      #   f.write(pdb_string)
+
     ret = _run_one_iteration(
         pdb_string=pdb_string,
         exclude_residues=exclude_residues,
@@ -474,9 +514,33 @@ def run_pipeline(
         stiffness=stiffness,
         restraint_set=restraint_set,
         max_attempts=max_attempts)
-    prot = protein.from_pdb_string(ret["min_pdb"])
+
+    pdb_string = ret["min_pdb"]
+    testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}a.pdb")
+    with open(testpath, 'w') as f:
+      f.write(pdb_string)
+    if chainD:
+      L = []
+      for ln in io.StringIO(pdb_string).readlines():
+        if ln.startswith("ATOM"):
+          try:
+            if ln[chainid_pos] != "A":
+              resi = int(ln[chainid_pos+1:chainid_pos+5])
+              ln = ln[:chainid_pos] + "A" + chainD[resi][1:] + ln[chainid_pos+5:]
+          except Exception:
+            pass
+        L.append(ln)
+      pdb_string = "".join(L)
+      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}b.pdb")
+      with open(testpath, 'w') as f:
+        f.write(pdb_string)
+
+    prot = protein.from_pdb_string(pdb_string)
     if place_hydrogens_every_iteration:
       pdb_string = clean_protein(prot, checks=True)
+      testpath = os.path.join("/mnt/afold/preds/abcg5g8/abcg5g8", f"after_iter_{iteration}c.pdb")
+      with open(testpath, 'w') as f:
+        f.write(pdb_string)
     else:
       pdb_string = ret["min_pdb"]
     ret.update(get_violation_metrics(prot))
@@ -492,6 +556,7 @@ def run_pipeline(
                  ret["einit"], ret["efinal"], ret["opt_time"],
                  ret["num_residue_violations"], ret["num_exclusions"])
     iteration += 1
+
   return ret
 
 

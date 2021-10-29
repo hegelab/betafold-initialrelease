@@ -39,7 +39,7 @@ class Jackhmmer:
                *,
                binary_path: str,
                database_path: str,
-               n_cpu: int = 8,
+               n_cpu: int = 16,
                n_iter: int = 1,
                e_value: float = 0.0001,
                z_value: Optional[int] = None,
@@ -95,7 +95,8 @@ class Jackhmmer:
                    database_path: str,
                    sto_path: Optional[str] = None,
                    max_hits: Optional[int] = None,
-                   a3m_needed: Optional[bool] = None
+                   a3m_needed: Optional[bool] = None,
+                   do_run: Optional[bool] = True
                    ) -> Mapping[str, Any]:
     """Queries the database chunk using Jackhmmer."""
     with utils.tmpdir_manager(base_dir='/tmp') as query_tmp_dir:
@@ -137,23 +138,25 @@ class Jackhmmer:
       cmd = [self.binary_path] + cmd_flags + [input_fasta_path,
                                               database_path]
 
-      logging.info('Launching subprocess "%s"', ' '.join(cmd))
-      process = subprocess.Popen(
-          cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      with utils.timing(
-          f'Jackhmmer ({os.path.basename(database_path)}) query'):
-        _, stderr = process.communicate()
-        retcode = process.wait()
-
-      if retcode:
-        raise RuntimeError(
-            'Jackhmmer failed\nstderr:\n%s\n' % stderr.decode('utf-8'))
-
-      # Get e-values for each target name
       tbl = ''
-      if self.get_tblout:
-        with open(tblout_path) as f:
-          tbl = f.read()
+      stderr = ''
+      if do_run:
+        logging.info('Launching subprocess "%s"', ' '.join(cmd))
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with utils.timing(
+            f'Jackhmmer ({os.path.basename(database_path)}) query'):
+          _, stderr = process.communicate()
+          retcode = process.wait()
+
+        if retcode:
+          raise RuntimeError(
+              'Jackhmmer failed\nstderr:\n%s\n' % stderr.decode('utf-8'))
+
+        # Get e-values for each target name
+        if self.get_tblout:
+          with open(tblout_path) as f:
+            tbl = f.read()
 
       # with open(sto_path) as f: # co out by hege
       #   sto = f.read() # co out by hege
@@ -161,7 +164,7 @@ class Jackhmmer:
         sto, a3m = parsers.get_sto(sto_path, max_hits), None
       else:
         sto, a3m = parsers.get_sto_a3m(sto_path, max_hits)
-      
+
     raw_output = dict(
         sto=sto,
         a3m=a3m,
@@ -175,10 +178,11 @@ class Jackhmmer:
   def query(self, input_fasta_path: str,
             sto_path: Optional[str] = None,
             max_hits: Optional[int] = None,
-            a3m_needed: Optional[bool] = None) -> Sequence[Mapping[str, Any]]:
+            a3m_needed: Optional[bool] = None,
+            do_run: Optional[bool] = True) -> Sequence[Mapping[str, Any]]:
     """Queries the database using Jackhmmer."""
     if self.num_streamed_chunks is None:
-      return [self._query_chunk(input_fasta_path, self.database_path, sto_path, max_hits, a3m_needed)]
+      return [self._query_chunk(input_fasta_path, self.database_path, sto_path, max_hits, a3m_needed, do_run)]
 
     db_basename = os.path.basename(self.database_path)
     db_remote_chunk = lambda db_idx: f'{self.database_path}.{db_idx}'

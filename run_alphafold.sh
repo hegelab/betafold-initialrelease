@@ -18,11 +18,12 @@ usage() {
         echo "-g <use_gpu>      Enable NVIDIA runtime to run with GPUs (default: True)"
         echo "-a <gpu_devices>  Comma separated list of devices to pass to 'CUDA_VISIBLE_DEVICES' (default: 0)"
         echo "-p <preset>       Choose preset model configuration - no ensembling and smaller genetic database config (reduced_dbs), no ensembling and full genetic database config  (full_dbs) or full genetic database config and 8 model ensemblings (casp14)"
+	echo "-c <config file>  Enables setting arguments/parameters in a config file"
         echo ""
         exit 1
 }
 
-while getopts ":d:o:m:f:t:g:n:a:p:b" i; do
+while getopts ":d:o:m:f:t:g:n:a:p:c:b" i; do
         case "${i}" in
         d)
                 data_dir=$OPTARG
@@ -54,6 +55,9 @@ while getopts ":d:o:m:f:t:g:n:a:p:b" i; do
         b)
                 benchmark=true
         ;;
+	c)
+		config_file=${OPTARG}
+	;;
         esac
 done
 
@@ -81,6 +85,10 @@ fi
 if [[ "$preset" != "full_dbs" && "$preset" != "casp14" && "$preset" != "reduced_dbs" ]] ; then
     echo "Unknown preset! Using default ('full_dbs')"
     preset="full_dbs"
+fi
+
+if [[ "$config_file" != "" ]] ; then
+    config_file="--config_file=$config_file"
 fi
 
 # This bash script looks for the run_alphafold.py script in its current working directory, if it does not exist then exits
@@ -121,7 +129,7 @@ mgnify_database_path="$data_dir/mgnify/mgy_clusters.fa"
 template_mmcif_dir="$data_dir/pdb_mmcif/mmcif_files"
 obsolete_pdbs_path="$data_dir/pdb_mmcif/obsolete.dat"
 pdb70_database_path="$data_dir/pdb70/pdb70"
-uniclust30_database_path="$data_dir/uniclust30/uniclust30_2018_08/UniRef30_2021_06"
+uniclust30_database_path="$data_dir/uniclust30/uniclust30_2021_06/UniRef30_2021_06"
 uniref90_database_path="$data_dir/uniref90/uniref90.fasta"
 
 # Binary path (change me if required)
@@ -133,7 +141,7 @@ kalign_binary_path=$(which kalign)
 # Run AlphaFold with required parameters
 # 'reduced_dbs' preset does not use bfd and uniclust30 databases
 if [[ "$preset" == "reduced_dbs" ]]; then
-    $(python $alphafold_script --hhblits_binary_path=$hhblits_binary_path --hhsearch_binary_path=$hhsearch_binary_path --jackhmmer_binary_path=$jackhmmer_binary_path --kalign_binary_path=$kalign_binary_path --small_bfd_database_path=$small_bfd_database_path --mgnify_database_path=$mgnify_database_path --template_mmcif_dir=$template_mmcif_dir --obsolete_pdbs_path=$obsolete_pdbs_path --pdb70_database_path=$pdb70_database_path --uniref90_database_path=$uniref90_database_path --data_dir=$data_dir --output_dir=$output_dir --fasta_paths=$fasta_path --model_names=$model_names --max_template_date=$max_template_date --preset=$preset --benchmark=$benchmark --logtostderr)
+    $(python $alphafold_script --hhblits_binary_path=$hhblits_binary_path --hhsearch_binary_path=$hhsearch_binary_path --jackhmmer_binary_path=$jackhmmer_binary_path --kalign_binary_path=$kalign_binary_path --small_bfd_database_path=$small_bfd_database_path --mgnify_database_path=$mgnify_database_path --template_mmcif_dir=$template_mmcif_dir --obsolete_pdbs_path=$obsolete_pdbs_path --pdb70_database_path=$pdb70_database_path --uniref90_database_path=$uniref90_database_path --data_dir=$data_dir --output_dir=$output_dir --fasta_paths=$fasta_path --model_names=$model_names --max_template_date=$max_template_date --preset=$preset --benchmark=$benchmark --logtostderr $config_file)
 else
-    $(python $alphafold_script --hhblits_binary_path=$hhblits_binary_path --hhsearch_binary_path=$hhsearch_binary_path --jackhmmer_binary_path=$jackhmmer_binary_path --kalign_binary_path=$kalign_binary_path --bfd_database_path=$bfd_database_path --mgnify_database_path=$mgnify_database_path --template_mmcif_dir=$template_mmcif_dir --obsolete_pdbs_path=$obsolete_pdbs_path --pdb70_database_path=$pdb70_database_path --uniclust30_database_path=$uniclust30_database_path --uniref90_database_path=$uniref90_database_path --data_dir=$data_dir --output_dir=$output_dir --fasta_paths=$fasta_path --model_names=$model_names --max_template_date=$max_template_date --preset=$preset --benchmark=$benchmark --logtostderr)
+    $(python $alphafold_script --hhblits_binary_path=$hhblits_binary_path --hhsearch_binary_path=$hhsearch_binary_path --jackhmmer_binary_path=$jackhmmer_binary_path --kalign_binary_path=$kalign_binary_path --bfd_database_path=$bfd_database_path --mgnify_database_path=$mgnify_database_path --template_mmcif_dir=$template_mmcif_dir --obsolete_pdbs_path=$obsolete_pdbs_path --pdb70_database_path=$pdb70_database_path --uniclust30_database_path=$uniclust30_database_path --uniref90_database_path=$uniref90_database_path --data_dir=$data_dir --output_dir=$output_dir --fasta_paths=$fasta_path --model_names=$model_names --max_template_date=$max_template_date --preset=$preset --benchmark=$benchmark --logtostderr $config_file)
 fi
