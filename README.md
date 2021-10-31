@@ -2,26 +2,26 @@
 
 # BetaFold
 
-We ([hegelab.org](http://www.hegelab.org)) craeted this standalone fork with substantial changes that most likely will not be inserted in the main repository, but we find useful and important. We plan to try to push these changes gradually to main repo via [our alphafold fork](https://github.com/hegelab/alphafold).
+We ([hegelab.org](http://www.hegelab.org)) craeted this standalone AlphaFold fork with substantial changes that most likely will not be inserted in the main repository, but we found these modifications very useful during our daily work. We plan to try to push these changes gradually to main repo via [our alphafold fork](https://github.com/hegelab/alphafold).
 
 ## Changes / Features
 
 * It is called BetaFold, since there might be some minor bugs – we provide this code “as is”.
-* This fork includes the correction of some memory issues from [our alphafold fork](https://github.com/hegelab/alphafold) (see below).
+* This fork includes the correction of some memory issues from [our alphafold fork](https://github.com/hegelab/alphafold) (listed below below).
 * The changes mostly affect the workflow logic.
-* BetaFold run can be influence via configurations files.
-* Different steps of AF2 runs (generating features; running models; performing relaxation) can be separated. Thus database searches can run on a CPU node, while model running can be performed on a GPU node. Note: timings.json file is overwritten upon consecutive partial runs – save it if you need it. 
-* Complexes can be predicted by inserting “gaps”. Insert the sequences as one sequence into the fasta file and define the start and end of protomers in the configuration file (so easy). Important: at least ~40 a.a. difference should be in numbering between the end and start of two protomers.
- *Notes:* 
-- This feature might be obsolete soon, after releasing the AF2-Multimer code and models.
-- Since AF library functions can handle only single chain and openMM requires all atoms at the starting and ending residues, we had to modify the amber relaxation code. Therefore the unrelaxed and relaxed structures will not have the same atoms (therefore we also skipped the RMSD calculation). 
+* BetaFold run can be influence via **configuration files**.
+* **Different steps of AF2 runs** (generating features; running models; performing relaxation) can be separated. Thus database searches can run on a CPU node, while model running can be performed on a GPU node. Note: timings.json file is overwritten upon consecutive partial runs – save it if you need it. 
+* **Complexes** can be predicted by inserting “gaps”. Insert the sequences as one sequence into the fasta file and define the start and end of protomers in the configuration file (so easy). Important: at least ~40 a.a. difference should be in numbering between the end and start of two protomers. **Notes:**
+	- This feature might be obsolete soon, after releasing the AF2-Multimer code and models.
+	- Since AF library functions can handle only single chain and openMM requires all atoms at the starting and ending residues, we had to modify the amber relaxation code. Therefore the unrelaxed and relaxed structures will not have the same atoms (therefore we also skipped the RMSD calculation).
 
 ## Configuration file
 
-* You can provide the configuration file as: ‘run_alphafold.sh ... -c CONF_FILENAME’
+* You can provide the configuration file as: ‘run_alphafold.sh ARGUMENTS -c CONF_FILENAME’ (slightly modified version of the bash script from [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker); please see below our Requirement section)
 * If no configuration file or no section or no option is provided, everything is expected to run everything with the original default parameters.
 
-‘’’[steps]
+```
+[steps]
 get_features = true
 run_models = true
 run_relax = true
@@ -59,16 +59,16 @@ max_template_hits = 20
 
 [hhblits_bfd_uniclust]
 do_run = True
-‘’’
+```
 
 ## Requirements
 
-* BetaFold use the [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) setup.
+* BetaFold uses the [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) setup.
 * For the modified relaxation you need to install [pdbfixer]() as:
-- `git clone https://github.com/openmm/pdbfixer.git`
-- `cd pdbfixer`
--  activate your conda environment (e.g. `conda activate betafold`)
-- `python3 setup.py install`
+	- `git clone https://github.com/openmm/pdbfixer.git`
+	- `cd pdbfixer`
+	-  activate your conda environment (e.g. `conda activate betafold`)
+	- `python3 setup.py install`
 
 ## Paper/Reference/Citation
 Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
