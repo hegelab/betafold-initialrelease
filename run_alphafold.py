@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Modified by tamas@hegelab.org
+# see details at https://github.com/hegelab/betafold
+
 """Full AlphaFold protein structure prediction script."""
 import json
 import os

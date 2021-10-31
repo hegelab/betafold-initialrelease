@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Modified by tamas@hegelab.org
-# see detailes at https://github.com/hegelab/alphafold
+# see details at https://github.com/hegelab/betafold
 
 
 """Functions for parsing various file formats."""

@@ -1,12 +1,79 @@
-![header](imgs/header.jpg)
+![alphafold.hegelab.org](imgs/af_hegelab.png)
 
-# AlphaFold
+# BetaFold
 
-We ([hegelab.org](http://www.hegelab.org)) craeted this fork to remove some bug-like features and implement some new bug-like features. We significantly altered this README.md file to highlight the changes we made. Please read the orgininal [README.md](README.orig.md) for install instructions at [deepmind/alphafold](https://github.com/deepmind/alphafold). Although we use [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) for running and testing, our changes should work also in a docker environment.
+We ([hegelab.org](http://www.hegelab.org)) craeted this standalone fork with substantial changes that most likely will not be inserted in the main repository, but we find useful and important. We plan to try to push these changes gradually to main repo via [our alphafold fork](https://github.com/hegelab/alphafold).
 
+## Changes / Features
+
+* It is called BetaFold, since there might be some minor bugs – we provide this code “as is”.
+* This fork includes the correction of some memory issues from [our alphafold fork](https://github.com/hegelab/alphafold) (see below).
+* The changes mostly affect the workflow logic.
+* BetaFold run can be influence via configurations files.
+* Different steps of AF2 runs (generating features; running models; performing relaxation) can be separated. Thus database searches can run on a CPU node, while model running can be performed on a GPU node. Note: timings.json file is overwritten upon consecutive partial runs – save it if you need it. 
+* Complexes can be predicted by inserting “gaps”. Insert the sequences as one sequence into the fasta file and define the start and end of protomers in the configuration file (so easy). Important: at least ~40 a.a. difference should be in numbering between the end and start of two protomers.
+ *Notes:* 
+- This feature might be obsolete soon, after releasing the AF2-Multimer code and models.
+- Since AF library functions can handle only single chain and openMM requires all atoms at the starting and ending residues, we had to modify the amber relaxation code. Therefore the unrelaxed and relaxed structures will not have the same atoms (therefore we also skipped the RMSD calculation). 
+
+## Configuration file
+
+* You can provide the configuration file as: ‘run_alphafold.sh ... -c CONF_FILENAME’
+* If no configuration file or no section or no option is provided, everything is expected to run everything with the original default parameters.
+
+‘’’[steps]
+get_features = true
+run_models = true
+run_relax = true
+
+[sequence_features]
+protomers = 1-650:1001-1700
+
+[paths]
+db = /mnt/afold/db
+pdb70_database_path = %(db)s/mypdb70/pdb70
+# uniref90_database_path
+# mgnify_database_path
+# bfd_database_path
+# uniclust30_database_path
+# small_bfd_database_path
+# template_mmcif_dir
+# obsolete_pdbs_path
+
+# TODO implement binary paths
+output = /mnt/afold/afold_hegelab/results/SOMEDIR
+tmp = %(output)s/tmp
+
+[jackhmmer_uniref90]
+do_run = true
+max_hits = 10000
+
+[jackhmmer_mgnify]
+do_run = true
+max_hits = 10000
+
+[hhsearch_pdb70]
+do_run = true
+max_template_hits = 20
+# TODO max_template_date = 
+
+[hhblits_bfd_uniclust]
+do_run = True
+‘’’
+
+## Requirements
+
+* BetaFold use the [AlfaFold without docker @ kalininalab](https://github.com/kalininalab/alphafold_non_docker) setup.
+* For the modified relaxation you need to install [pdbfixer]() as:
+- `git clone https://github.com/openmm/pdbfixer.git`
+- `cd pdbfixer`
+-  activate your conda environment (e.g. `conda activate betafold`)
+- `python3 setup.py install`
+
+## Paper/Reference/Citation
 Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
 
-# Issues pushed us to contribute
+## Memory issues you may encounter when running original AlphaFold locally
 
 ### "Out of Memory"
 
@@ -18,83 +85,8 @@ Some of our AF2 runs with short sequences (~250 a.a.) consumed all of our memory
 
 ### "ValueError: Cannot create a tensor proto whose content is larger than 2GB."
 (https://github.com/deepmind/alphafold/issues/71)
-If your protein is highly conserved then the alignment may result in a large data set that does not fit TensorFlow's hard coded 2Gb limit. Theoretically, the call to `jackhmmer_uniref90_result` in `alphafold/data/pipeline.py` should be limited  to `uniref_max_hits: int = 10000`. However, this does not happen. You can find an [easy fix for this at alphafold.hegelab.org](http://alphafold.hegelab.org/) that avoid to use this fork. However, we also fixed other memory problems with the previous fix. So if you use this fork, this "ValueError...2GB" issue is obsolete for you.
-
-![hegelab.org](imgs/af_hegelab.png)
-
-
-# Important notices - from the original README.md file
-
-This package provides an implementation of the inference pipeline of AlphaFold
-v2.0. This is a completely new model that was entered in CASP14 and published in
-Nature. For simplicity, we refer to this model as AlphaFold throughout the rest
-of this document.
-
-Any publication that discloses findings arising from using this source code or
-the model parameters should [cite](#citing-this-work) the
-[AlphaFold paper](https://doi.org/10.1038/s41586-021-03819-2). Please also refer
-to the
-[Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-021-03819-2/MediaObjects/41586_2021_3819_MOESM1_ESM.pdf)
-for a detailed description of the method.
-
-## Citing this work
-
-If you use the code or data in this package, please cite:
-
-```bibtex
-@Article{AlphaFold2021,
-  author  = {Jumper, John and Evans, Richard and Pritzel, Alexander and Green, Tim and Figurnov, Michael and Ronneberger, Olaf and Tunyasuvunakool, Kathryn and Bates, Russ and {\v{Z}}{\'\i}dek, Augustin and Potapenko, Anna and Bridgland, Alex and Meyer, Clemens and Kohl, Simon A A and Ballard, Andrew J and Cowie, Andrew and Romera-Paredes, Bernardino and Nikolov, Stanislav and Jain, Rishub and Adler, Jonas and Back, Trevor and Petersen, Stig and Reiman, David and Clancy, Ellen and Zielinski, Michal and Steinegger, Martin and Pacholska, Michalina and Berghammer, Tamas and Bodenstein, Sebastian and Silver, David and Vinyals, Oriol and Senior, Andrew W and Kavukcuoglu, Koray and Kohli, Pushmeet and Hassabis, Demis},
-  journal = {Nature},
-  title   = {Highly accurate protein structure prediction with {AlphaFold}},
-  year    = {2021},
-  volume  = {596},
-  number  = {7873},
-  pages   = {583--589},
-  doi     = {10.1038/s41586-021-03819-2}
-}
-```
+If your protein is highly conserved then the alignment may result in a large data set that does not fit TensorFlow's hard coded 2Gb limit. Theoretically, the call to `jackhmmer_uniref90_result` in `alphafold/data/pipeline.py` should be limited  to `uniref_max_hits: int = 10000`. However, this does not happen. You can find an [easy fix for this at alphafold.hegelab.org](http://alphafold.hegelab.org/) that avoid to use our forks. However, we also fixed other memory problems with the previous fix. So if you use our forks, this "ValueError...2GB" issue is obsolete for you.
 
 ## License and Disclaimer
 
-This is not an officially supported Google product.
-
-Copyright 2021 DeepMind Technologies Limited.
-
-### AlphaFold Code License
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use
-this file except in compliance with the License. You may obtain a copy of the
-License at https://www.apache.org/licenses/LICENSE-2.0.
-
-Unless required by applicable law or agreed to in writing, software distributed
-under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied. See the License for the
-specific language governing permissions and limitations under the License.
-
-### Model Parameters License
-
-The AlphaFold parameters are made available for non-commercial use only, under
-the terms of the Creative Commons Attribution-NonCommercial 4.0 International
-(CC BY-NC 4.0) license. You can find details at:
-https://creativecommons.org/licenses/by-nc/4.0/legalcode
-
-### Third-party software
-
-Use of the third-party software, libraries or code referred to in the
-[Acknowledgements](#acknowledgements) section above may be governed by separate
-terms and conditions or license provisions. Your use of the third-party
-software, libraries or code is subject to any such terms and you should check
-that you can comply with any applicable restrictions or terms and conditions
-before use.
-
-### Mirrored Databases
-
-The following databases have been mirrored by DeepMind, and are available with reference to the following:
-
-*   [BFD](https://bfd.mmseqs.com/) (unmodified), by Steinegger M. and Söding J., available under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/).
-
-*   [BFD](https://bfd.mmseqs.com/) (modified), by Steinegger M. and Söding J., modified by DeepMind, available under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/). See the Methods section of the [AlphaFold proteome paper](https://www.nature.com/articles/s41586-021-03828-1) for details.
-
-*   [Uniclust30: v2018_08](http://wwwuser.gwdg.de/~compbiol/uniclust/2018_08/) (unmodified), by Mirdita M. et al., available under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/).
-
-*   [MGnify: v2018_12](http://ftp.ebi.ac.uk/pub/databases/metagenomics/peptide_database/current_release/README.txt) (unmodified), by Mitchell AL et al., available free of all copyright restrictions and made fully and freely available for both non-commercial and commercial use under [CC0 1.0 Universal (CC0 1.0) Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/).
+Please see the [original](https://github.com/deepmind/alphafold#license-and-disclaimer).
