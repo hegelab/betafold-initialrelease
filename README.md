@@ -13,7 +13,7 @@ We ([hegelab.org](http://www.hegelab.org)) craeted this standalone AlphaFold for
 * **Different steps of AF2 runs** (generating features; running models; performing relaxation) can be separated. Thus database searches can run on a CPU node, while model running can be performed on a GPU node. Note: timings.json file is overwritten upon consecutive partial runs – save it if you need it. 
 * **Complexes** can be predicted by inserting “gaps”. Insert the sequences as one sequence into the fasta file and define the start and end of protomers in the configuration file (so easy). Important: at least ~40 a.a. difference should be in numbering between the end and start of two protomers. **Notes:**
 	- This feature might be obsolete soon, after releasing the AF2-Multimer code and models.
-	- Since AF library functions can handle only single chain and openMM requires all atoms at the starting and ending residues, we had to modify the amber relaxation function in the AF2 code. Therefore the unrelaxed and relaxed structures will not have the same atoms (therefore we also skipped the RMSD calculation).
+	- Since AF library functions can handle only single chain and openMM requires all atoms at the starting and ending residues, we had to modify the amber relaxation function in the AF2 code. Therefore the unrelaxed and relaxed structures will not have the same atoms (therefore we also skipped the RMSD calculation). **Most imporant:** The relaxed/ranked pdb structures do not contain the pLDDT values. We will correct this soon - till you can use scripts/set_b_plddt.py to copy pLDDT values from unrelaxed to relaxed/ranked pdb files.
 
 ## Configuration file
 
