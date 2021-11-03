@@ -52,12 +52,9 @@ def make_sequence_features(
   features['residue_index'] = np.array(range(num_res), dtype=np.int32)
   if hconfig:
     resix = getconf_resix(hconfig)
-    if resix:
+    if resix is not None:
       if len(resix) != num_res:
-        raise ValueError('The sum of protomer size parameters provided in the '
-                         '[sequence_features] section of the config file is'
-                         'not the same as the sequence length (num_res) '
-                         'in the input fasta file')
+        raise ValueError(f"Protomer size {len(resix)} != {num_res}; check [sequence_features] in the config and your fasta file.")
 
       features['residue_index'] = resix
   
