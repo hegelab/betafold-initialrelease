@@ -69,6 +69,7 @@ do_run = True
 	- `cd pdbfixer`
 	-  activate your conda environment (e.g. `conda activate betafold`)
 	- `python3 setup.py install`
+* The set_b_plddt.py script requires MDAnalysis.
 
 ## Paper/Reference/Citation
 Till we publish a methodological paper, please read and cite our preprint ["AlphaFold2 transmembrane protein structure prediction shines"](https://www.biorxiv.org/content/10.1101/2021.08.21.457196v1).
